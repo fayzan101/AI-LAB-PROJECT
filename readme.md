@@ -51,24 +51,32 @@ fastapi-ai-system/
 * Employee Performance Trends
 * Attendance Pattern Analysis
 * Workload Balancing Recommendations
+* Adaptive Productivity Benchmarking (Personalized Baseline)
+* Anomaly Detection in Work Behavior
 
 ---
 
 ## 🔗 API Endpoints
 
-### Core APIs
+### Auth API
+
+* POST `/auth/login`
+
+### Core APIs (Bearer token required)
 
 * POST `/employee/data`
 * POST `/tasks`
-* POST `/attendance`
 
 ### Analytics APIs
 
-* GET `/analytics/productivity/{id}`
-* GET `/analytics/burnout/{id}`
-* GET `/analytics/trend/{id}`
-* GET `/analytics/workload/{id}`
-* GET `/analytics/report/{id}`
+* POST `/analytics/report`
+* GET `/reports/weekly/{employee_id}`
+
+### Health APIs
+
+* GET `/health/live`
+* GET `/health/ready`
+* GET `/health/startup`
 
 ---
 
@@ -80,6 +88,20 @@ The AI module uses:
 * Rule-based decision making
 * Pattern & trend detection
 * Risk classification logic
+* Personalized baseline comparison (z-score)
+* Work behavior anomaly detection
+
+---
+
+## ✅ Testing
+
+Run locally:
+
+```bash
+pytest -q
+```
+
+CI is configured in `.github/workflows/ci.yml` and runs syntax checks plus tests on push/PR.
 
 ---
 

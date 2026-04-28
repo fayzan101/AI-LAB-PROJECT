@@ -4,3 +4,10 @@ pandas
 numpy
 scikit-learn
 pydantic
+pytest
+httpx
+PyJWT
+SQLAlchemy
+psycopg[binary]
+redis
+prometheus-client

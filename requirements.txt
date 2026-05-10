@@ -10,5 +10,6 @@ httpx
 PyJWT
 SQLAlchemy
 psycopg[binary]
+psycopg2-binary
 redis
 prometheus-client

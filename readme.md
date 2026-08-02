@@ -1,151 +1,108 @@
-# 🤖 AI-Based Employee Productivity & Analytics System
+# Remote Work Tracker – AI Server
 
-## 📌 Overview
+FastAPI microservice that scores productivity, burnout risk, attendance patterns, anomalies, and team performance rankings. The portal **backend** calls this service server-to-server; browsers should not hit it directly.
 
-This project is an **AI-powered FastAPI microservice** that analyzes employee data to generate insights like productivity, burnout risk, task delays, performance trends, and workload balance recommendations.
+## Stack
 
-It acts as an **intelligent analytics layer** for HR dashboards and workforce management systems.
+- **Runtime:** Python 3.10+, FastAPI + Uvicorn
+- **DB:** SQLAlchemy (SQLite locally; PostgreSQL / Neon in production via `DATABASE_URL`)
+- **Auth:** Service JWT (`client_id` / `client_secret` → Bearer token)
+- **Analytics:** Rule engine + optional classical ML (`joblib` / scikit-learn)
+- **Ops:** Rate limiting, Prometheus `/metrics`, liveness / readiness probes
 
----
+## Features
 
-## 🏗️ Architecture
+- Productivity and burnout heuristics (tasks + optional agent telemetry scalars)
+- Task delay signals, attendance patterns, z-score benchmarks, anomaly flags
+- Weekly reports and team / department performance ranking
+- Optional ML inference when `AI_ML_ENABLED` and model path are set
+- Idempotency and schema migrations for deployed environments
 
-Portal backend (Node) aggregates **agent telemetry** (`activity_logs` + `idle_logs`) and pushes scalars to this service. No direct reads of the main app database.
+## Prerequisites
 
-Employee / report payloads → **rule engine** (+ optional scikit-learn joblib) → JSON insights → dashboards / workers.
+- Python 3.10+
+- Portal backend configured with matching `AI_SERVER_BASE_URL` and service credentials
 
----
+## Setup
 
-## ⚙️ Tech Stack
-
-* Python (FastAPI)
-* Rule-based scoring (productivity, burnout heuristic, attendance pattern, z-score benchmark, anomalies)
-* Optional classical ML: `joblib` model + `AI_ML_ENABLED` / `AI_ML_MODEL_PATH`
-* JSON-based persistence (`employee_inputs.extra_json` stores telemetry keys)
-* Postman / pytest (testing)
-
----
-
-## 📁 Project Structure
-
-```
-fastapi-ai-system/
-├── main.py
-├── database.py
-├── models.py
-├── schemas.py
-├── routes/
-├── services/
-│   ├── ai_engine.py
-│   ├── analytics_service.py
-├── utils/
-├── data/
+```bash
+cd ai-server
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
 ```
 
----
+Key `.env` values:
 
-## 🚀 Features
+```env
+API_PREFIX=/api/v1
+SERVICE_CLIENT_ID=portal-backend
+SERVICE_CLIENT_SECRET=change-me
+JWT_SECRET=change-this-secret-in-production
+DATABASE_URL=sqlite:///employee_analytics.db
+CORS_ORIGINS=http://localhost:3000
+```
 
-### 📊 AI Analytics
+For Postgres (e.g. Neon), use a `postgresql+psycopg://…` URL.
 
-* Productivity score (tasks + **telemetry-aware** active/idle ratio and fragmentation penalty when `active_seconds` / `segment_count` are present)
-* Burnout risk heuristic (hours + idle proportion)
-* Task delay prediction (rule-based)
-* Attendance pattern (**late** signal can use `first_seen_offset_minutes`; `attendance_days` = days with agent data when sent from telemetry snapshot)
-* Adaptive productivity benchmarking (z-score vs history)
-* Work behavior anomaly flags
-* Deterministic **telemetry_signal_quality** (`sparse` | `sufficient`) and **presence_consistency** labels on reports
+## Running
 
----
+```bash
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-## Agent telemetry fields (optional on ingest)
+- API: `http://127.0.0.1:8000`
+- OpenAPI: `http://127.0.0.1:8000/docs`
+- Live: `GET /health/live` · Ready: `GET /health/ready`
 
-When the portal sends agent rollups, JSON may include: `active_seconds`, `idle_seconds`, `telemetry_days_with_data`, `segment_count`, `focus_fragmentation_index`, `first_seen_offset_minutes`, `last_seen_offset_minutes`. Older clients may omit them; the engine falls back to `working_hours` / `idle_hours` only.
+Portal backend should set:
 
-### Optional ML inference
+```env
+AI_SERVER_BASE_URL=http://localhost:8000
+AI_SERVICE_CLIENT_ID=portal-backend
+AI_SERVICE_CLIENT_SECRET=change-me
+```
 
-Set environment variables:
+## Main routes (`API_PREFIX`, default `/api/v1`)
+
+| Mount | Notes |
+|-------|--------|
+| `POST /auth/login` | Service client credentials → JWT |
+| `POST /employee/data` | Ingest employee snapshots (+ optional telemetry) |
+| `POST /tasks` | Ingest task progress |
+| `POST /analytics/report` | Synchronous analytics / full report |
+| `GET /reports/weekly/{employee_id}` | Historical weekly report |
+| Ops / health | `/health/*`, `/metrics` (see `routes/ops.py`) |
+
+Portal proxies live under **`/api/v1/ai/*`** on the Node backend.
+
+## Optional ML
 
 | Variable | Meaning |
 |----------|---------|
-| `AI_ML_ENABLED` | `1` / `true` to attempt loading a model |
-| `AI_ML_MODEL_PATH` | Filesystem path to a `joblib` artifact (e.g. sklearn classifier) |
-| `AI_ML_MODEL_VERSION` | Arbitrary version string echoed in `meta.ml` |
-| `AI_ML_FEATURE_SCHEMA_VERSION` | Must match training feature order in `services/ml_scorer.build_feature_vector_v1` |
+| `AI_ML_ENABLED` | `true` / `1` to load a model |
+| `AI_ML_MODEL_PATH` | Path to a `joblib` artifact |
+| `AI_ML_MODEL_VERSION` | Version string echoed in `meta.ml` |
 
-If unset or load fails, analytics still succeed with rules-only output.
+If unset or load fails, analytics still return rules-only results.
 
----
-
-## 🔗 API Endpoints
-
-All JSON routes below are mounted under **`API_PREFIX`** (default **`/api/v1`**), e.g. `POST /api/v1/auth/login`. Interactive **OpenAPI** (**Swagger UI**) is at **`/docs`** while the app is running (`http://127.0.0.1:8000/docs` by default). The portal backend OpenAPI (`/docs` on the Node app) documents **`/api/v1/ai/*`** proxies that call this service server-to-server.
-
-### Auth API
-
-* POST `/auth/login`
-
-### Core APIs (Bearer token required)
-
-* POST `/employee/data`
-* POST `/tasks`
-
-### Analytics APIs
-
-* POST `/analytics/report`
-* GET `/reports/weekly/{employee_id}`
-
-### Health APIs
-
-* GET `/health/live`
-* GET `/health/ready`
-* GET `/health/startup`
-
----
-
-## 🧠 AI Engine
-
-The AI module uses:
-
-* Weighted scoring models
-* Rule-based decision making
-* Pattern & trend detection
-* Risk classification logic
-* Personalized baseline comparison (z-score)
-* Work behavior anomaly detection
-
----
-
-## ✅ Testing
-
-Run locally:
+## Testing
 
 ```bash
 pytest -q
 ```
 
-CI is configured in `.github/workflows/ci.yml` and runs syntax checks plus tests on push/PR.
+CI: `.github/workflows/ci.yml`.
 
----
+## Related packages
 
-## 👨‍💻 Team Roles
+| Package | Role |
+|---------|------|
+| `backend/` | Express API that authenticates and proxies AI calls |
+| `web/` | Admin portal (consumes backend, not this service directly) |
+| `mobile/` | Employee app |
+| `agent/` | Desktop telemetry agent |
 
-* **Backend Developer:** FastAPI APIs & integration
-* **AI Developer:** Core analytics & AI logic
-* **Tester/Doc Writer:** Dataset, testing & documentation
-
----
-
-## 📈 Output
-
-The system returns structured JSON insights for HR dashboards, enabling smarter decision-making for employee performance management.
-
----
-
-## 🏁 Goal
-
-To build an intelligent system that helps organizations **analyze employee performance, detect risks early, and optimize workload efficiently.**
-
----
-
-If you want, I can also make a **GitHub-ready README with badges + diagrams + deployment steps**.
+See also `MODEL_CARD.md` and `functunality.md` for deeper model and feature notes.

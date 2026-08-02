@@ -8,6 +8,8 @@ from schemas import (
     ApiEnvelope,
     AnomalyResult,
     BenchmarkResult,
+    DataQualityResult,
+    ExplanationItem,
     PerformanceRankingRequest,
     ReportResponse,
     SmartAttendanceAnalysis,
@@ -16,6 +18,7 @@ from security import require_auth, require_scope
 from services.ai_engine import build_full_report
 from services.ml_scorer import maybe_ml_scores
 from services.performance_ranking import compute_performance_ranking
+from services.scoring_policy import RULE_ENGINE_VERSION
 
 router = APIRouter(tags=["Analytics"])
 
@@ -48,6 +51,12 @@ def full_report(
     benchmark = BenchmarkResult(**report_dict["adaptive_benchmark"])
     anomaly = AnomalyResult(**report_dict["anomaly_detection"])
     smart = SmartAttendanceAnalysis(**report_dict["smart_attendance"])
+    dq = DataQualityResult(**report_dict["data_quality"]) if report_dict.get("data_quality") else None
+    explanations = (
+        [ExplanationItem(**item) for item in report_dict.get("explanations") or []]
+        if report_dict.get("explanations") is not None
+        else None
+    )
     report = ReportResponse(
         tenant_id=report_dict["tenant_id"],
         employee_id=report_dict["employee_id"],
@@ -62,12 +71,30 @@ def full_report(
         telemetry_signal_quality=report_dict.get("telemetry_signal_quality"),
         presence_consistency=report_dict.get("presence_consistency"),
         smart_attendance=smart,
+        rule_engine_version=report_dict.get("rule_engine_version") or RULE_ENGINE_VERSION,
+        scoring_mode=report_dict.get("scoring_mode") or "rules",
+        confidence=report_dict.get("confidence"),
+        data_quality=dq,
+        explanations=explanations,
+        working_hours=report_dict.get("working_hours"),
+        idle_hours=report_dict.get("idle_hours"),
+        created_at=report_dict.get("created_at"),
     )
 
+    # ML is additive metadata only — never replaces deterministic rule fields.
     ml_meta = maybe_ml_scores(payload)
+    scoring_mode = "hybrid" if ml_meta and not ml_meta.get("error") and not ml_meta.get("skipped") else "rules"
+    report.scoring_mode = scoring_mode
+    if ml_meta and isinstance(ml_meta.get("model_version"), str):
+        report.model_version = ml_meta["model_version"]
     meta: dict[str, Any] = {
         "history_points_used": len(history),
         "report_id": save_analytics_report(report.model_dump()),
+        "rule_engine_version": report.rule_engine_version,
+        "scoring_mode": scoring_mode,
+        "confidence": report.confidence,
+        "data_quality": report.data_quality.model_dump() if report.data_quality else None,
+        "model_version": report.model_version,
     }
     if ml_meta is not None:
         meta["ml"] = ml_meta

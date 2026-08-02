@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from config import settings
 from schemas import ApiEnvelope
 from security import authenticate_service_client, create_access_token
 
@@ -28,6 +29,6 @@ def login(data: LoginRequest) -> ApiEnvelope:
         data={
             "access_token": token,
             "token_type": "bearer",
-            "expires_in": 3600,
+            "expires_in": settings.token_exp_seconds,
         },
     )

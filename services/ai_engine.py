@@ -1,7 +1,11 @@
+from datetime import datetime, timezone
 from math import sqrt
 from typing import Any, Iterable, Mapping
 
+from services import scoring_policy as policy
 from services.attendance_smart import analyze_smart_attendance
+from services.data_quality import assess_data_quality
+from services.explanations import build_explanations, compute_confidence
 
 
 def _as_dict(data: Any) -> dict[str, Any]:
@@ -49,9 +53,9 @@ def classify_telemetry_signal_quality(payload: Mapping[str, Any]) -> str:
         return "sparse"
     if not telemetry_like:
         return "sufficient"
-    if wh > 4 and seg < 2:
+    if wh > policy.SPARSE_WH_SEG_THRESHOLD and seg < policy.SPARSE_MIN_SEGMENTS:
         return "sparse"
-    if days > 0 and seg == 0 and wh < 1:
+    if days > 0 and seg == 0 and wh < policy.SPARSE_LOW_WH:
         return "sparse"
     return "sufficient"
 
@@ -67,22 +71,25 @@ def classify_presence_consistency(attendance_pattern: str) -> str:
 def calculate_productivity(data: Any) -> float:
     payload = _as_dict(data)
     raw_score = (
-        float(payload.get("tasks_completed", 0)) * 3
-        + float(payload.get("attendance_days", 0)) * 2
-        - float(payload.get("idle_hours", 0))
+        float(payload.get("tasks_completed", 0)) * policy.TASKS_COMPLETED_WEIGHT
+        + float(payload.get("attendance_days", 0)) * policy.ATTENDANCE_DAYS_WEIGHT
+        - float(payload.get("idle_hours", 0)) * policy.IDLE_HOURS_PENALTY
     )
-    base = max(0.0, min(100.0, raw_score))
+    base = max(policy.PRODUCTIVITY_MIN, min(policy.PRODUCTIVITY_MAX, raw_score))
 
     active, idle = _effective_active_idle_seconds(payload)
     total = active + idle
     frag = payload.get("focus_fragmentation_index")
-    if total > 60 and has_telemetry_extras(payload):
+    if total > policy.MIN_TELEMETRY_SECONDS_FOR_RATIO and has_telemetry_extras(payload):
         ratio = active / total
-        ratio_boost = max(-15.0, min(15.0, (ratio - 0.55) * 40.0))
-        base = max(0.0, min(100.0, base + ratio_boost))
+        ratio_boost = max(
+            -policy.ACTIVE_RATIO_CLAMP,
+            min(policy.ACTIVE_RATIO_CLAMP, (ratio - policy.ACTIVE_RATIO_TARGET) * policy.ACTIVE_RATIO_SCALE),
+        )
+        base = max(policy.PRODUCTIVITY_MIN, min(policy.PRODUCTIVITY_MAX, base + ratio_boost))
         if frag is not None:
-            penalty = min(12.0, float(frag) * 22.0)
-            base = max(0.0, base - penalty)
+            penalty = min(policy.FRAGMENTATION_PENALTY_MAX, float(frag) * policy.FRAGMENTATION_PENALTY_SCALE)
+            base = max(policy.PRODUCTIVITY_MIN, base - penalty)
 
     return round(base, 2)
 
@@ -95,11 +102,13 @@ def detect_burnout(data: Any) -> str:
     total = active + idle
     idle_ratio = idle / total if total > 0 else 0.0
 
-    if hours > 10 or (hours > 9 and productivity < 45):
+    if hours > policy.BURNOUT_HIGH_HOURS or (
+        hours > policy.BURNOUT_HIGH_HOURS_LOW_PROD and productivity < policy.BURNOUT_HIGH_PROD_THRESHOLD
+    ):
         return "High Risk"
-    if idle_ratio >= 0.55 and hours >= 8:
+    if idle_ratio >= policy.BURNOUT_IDLE_RATIO and hours >= policy.BURNOUT_IDLE_HOURS_MIN:
         return "Medium Risk"
-    if hours > 8 or productivity < 55:
+    if hours > policy.BURNOUT_MEDIUM_HOURS or productivity < policy.BURNOUT_MEDIUM_PROD:
         return "Medium Risk"
     return "Low Risk"
 
@@ -108,9 +117,9 @@ def predict_delay(data: Any) -> str:
     payload = _as_dict(data)
     progress = float(payload.get("task_progress", 0))
     days_left = int(payload.get("days_left", 0))
-    if progress < 50 and days_left < 3:
+    if progress < policy.DELAY_HIGH_PROGRESS and days_left < policy.DELAY_HIGH_DAYS_LEFT:
         return "High Risk"
-    if progress < 70:
+    if progress < policy.DELAY_MEDIUM_PROGRESS:
         return "Medium Risk"
     return "Low Risk"
 
@@ -121,13 +130,13 @@ def analyze_attendance_pattern(data: Any) -> str:
     absent = int(payload.get("absent_days", 0))
     if has_telemetry_extras(payload):
         first_off = int(payload.get("first_seen_offset_minutes") or 0)
-        if first_off >= 120:
+        if first_off >= policy.FIRST_SEEN_LATE_120:
             late = max(late, 3)
-        if first_off >= 60:
+        if first_off >= policy.FIRST_SEEN_LATE_60:
             late = max(late, 2)
-    if late >= 4 or absent >= 3:
+    if late >= policy.LATE_IRREGULAR or absent >= policy.ABSENT_IRREGULAR:
         return "Irregular"
-    if late >= 2 or absent >= 1:
+    if late >= policy.LATE_MONITOR or absent >= policy.ABSENT_MONITOR:
         return "Needs Monitoring"
     return "Regular"
 
@@ -154,13 +163,13 @@ def adaptive_productivity_benchmark(current_productivity: float, history: list[A
     sample_count = len(scores)
     z_score = 0.0 if baseline_std == 0 else (current_productivity - baseline_mean) / baseline_std
 
-    if sample_count < 5:
+    if sample_count < policy.BENCHMARK_WARMUP_SAMPLES:
         status = "Warm-up"
         message = "Collect more history for stable personalized baseline."
-    elif z_score <= -1.5:
+    elif z_score <= policy.BENCHMARK_DECLINE_Z:
         status = "Decline"
         message = "Performance is lower than personal baseline."
-    elif z_score >= 1.5:
+    elif z_score >= policy.BENCHMARK_IMPROVE_Z:
         status = "Improvement"
         message = "Performance is above personal baseline."
     else:
@@ -188,11 +197,11 @@ def detect_work_anomaly(data: Any, productivity: float, history: list[Any]) -> d
     total = active + idle
     idle_ratio = idle / total if total > 0 else 0.0
 
-    if working_hours >= 11:
+    if working_hours >= policy.ANOMALY_EXCESSIVE_HOURS:
         reasons.append("Excessive daily working hours")
-    if idle_hours >= 6 or idle_ratio >= 0.62:
+    if idle_hours >= policy.ANOMALY_IDLE_HOURS or idle_ratio >= policy.ANOMALY_IDLE_RATIO:
         reasons.append("Unusually high idle proportion")
-    if productivity <= 30:
+    if productivity <= policy.ANOMALY_PROD_DROP:
         reasons.append("Sudden productivity drop")
 
     if history:
@@ -206,7 +215,7 @@ def detect_work_anomaly(data: Any, productivity: float, history: list[Any]) -> d
         std_val = _std(historical_scores, mean_val)
         if std_val > 0:
             z_score = (productivity - mean_val) / std_val
-            if z_score <= -2:
+            if z_score <= policy.ANOMALY_OUTLIER_Z:
                 reasons.append("Productivity is a statistical outlier below baseline")
 
     if len(reasons) >= 3:
@@ -277,6 +286,7 @@ def build_full_report(
     history: list[Any],
 ) -> dict[str, Any]:
     """Pure rule-engine output consumed by analytics route (+ optional ML meta)."""
+    dq = assess_data_quality(payload)
     productivity = calculate_productivity(payload)
     burnout = detect_burnout(payload)
     delay = predict_delay(payload)
@@ -306,14 +316,30 @@ def build_full_report(
     smart_attendance = analyze_smart_attendance(payload, history)
     rel = smart_attendance["reliability_score"]
     rank = smart_attendance["category_rank"]
-    if rel < 55:
+    if rel < policy.SMART_LOW_RELIABILITY:
         recommendations.append(
             "Smart attendance analysis shows low reliability — review schedule adherence, absences, and login/logout consistency."
         )
-    elif rank >= 2:
+    elif rank >= policy.SMART_IRREGULAR_RANK:
         recommendations.append(
             "Attendance clustering suggests irregular patterns — discuss flexibility, workload, and barriers to consistent start times."
         )
+
+    confidence = compute_confidence(
+        signal_quality=signal_quality,
+        history_count=len(history),
+        data_quality_status=dq["status"],
+        has_telemetry=has_telemetry_extras(payload),
+    )
+    explanations = build_explanations(
+        payload,
+        productivity=productivity,
+        burnout=burnout,
+        delay=delay,
+        attendance_pattern=attendance_pattern,
+        signal_quality=signal_quality,
+        anomaly=anomaly,
+    )
 
     return {
         "tenant_id": tenant_id,
@@ -329,4 +355,13 @@ def build_full_report(
         "telemetry_signal_quality": signal_quality,
         "presence_consistency": presence,
         "smart_attendance": smart_attendance,
+        "rule_engine_version": policy.RULE_ENGINE_VERSION,
+        "scoring_mode": "rules",
+        "confidence": confidence,
+        "data_quality": dq,
+        "explanations": explanations,
+        # Persisted for historical baselines (no fabricated defaults on the portal)
+        "working_hours": float(payload.get("working_hours") or 0),
+        "idle_hours": float(payload.get("idle_hours") or 0),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }

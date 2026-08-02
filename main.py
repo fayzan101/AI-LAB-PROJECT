@@ -16,7 +16,7 @@ from observability import (
     request_context_middleware,
 )
 from rate_limit import RateLimiter
-from routes import analytics, auth, employee, reports, tasks
+from routes import analytics, auth, employee, reports, tasks, ops
 
 APP_DESCRIPTION = """
 Internal **AI analytics** service for the Remote Work Tracker stack.
@@ -53,6 +53,7 @@ app.include_router(employee.router, prefix=settings.api_prefix)
 app.include_router(analytics.router, prefix=settings.api_prefix)
 app.include_router(tasks.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
+app.include_router(ops.router, prefix=settings.api_prefix)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),

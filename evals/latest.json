@@ -1,0 +1,8 @@
+{
+  "model": "productivity_baseline",
+  "version": "0.1.0",
+  "mae": 0.0,
+  "feature_schema_version": "1",
+  "promotion_gate_mae_max": 40,
+  "promotable": true
+}

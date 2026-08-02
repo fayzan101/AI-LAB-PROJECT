@@ -63,6 +63,21 @@ class SmartAttendanceAnalysis(BaseModel):
     history_points_for_consistency: int = Field(ge=0)
 
 
+class ExplanationItem(BaseModel):
+    factor: str
+    direction: str
+    weight: float
+    evidence: str
+    contribution: float = 0.0
+
+
+class DataQualityResult(BaseModel):
+    status: str
+    issues: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    checked_fields: List[str] = Field(default_factory=list)
+
+
 class ReportResponse(BaseModel):
     tenant_id: str
     employee_id: str
@@ -77,6 +92,15 @@ class ReportResponse(BaseModel):
     telemetry_signal_quality: Optional[str] = None
     presence_consistency: Optional[str] = None
     smart_attendance: Optional[SmartAttendanceAnalysis] = None
+    rule_engine_version: Optional[str] = None
+    scoring_mode: Optional[str] = "rules"
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    data_quality: Optional[DataQualityResult] = None
+    explanations: Optional[List[ExplanationItem]] = None
+    working_hours: Optional[float] = Field(default=None, ge=0)
+    idle_hours: Optional[float] = Field(default=None, ge=0)
+    created_at: Optional[str] = None
+    model_version: Optional[str] = None
 
 
 class ApiEnvelope(BaseModel):

@@ -1,6 +1,15 @@
 import os
 from dataclasses import dataclass
-def _to_bool(value: str, default: bool = False) -> bool:
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+
+def _to_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
@@ -34,6 +43,9 @@ class Settings:
     ai_ml_model_path: str | None = os.getenv("AI_ML_MODEL_PATH") or None
     ai_ml_model_version: str = os.getenv("AI_ML_MODEL_VERSION", "none")
     ai_ml_feature_schema_version: str = os.getenv("AI_ML_FEATURE_SCHEMA_VERSION", "1")
+    ai_ml_registry_dir: str = os.getenv("AI_ML_REGISTRY_DIR", "ml/registry")
+    ai_ml_active_alias: str = os.getenv("AI_ML_ACTIVE_ALIAS", "production")
+    ai_rule_engine_version: str = os.getenv("AI_RULE_ENGINE_VERSION", "1.0.0")
 
 
 settings = Settings()

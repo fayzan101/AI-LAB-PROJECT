@@ -1,0 +1,22 @@
+{
+  "name": "productivity_baseline",
+  "version": "0.1.0",
+  "feature_schema_version": "1",
+  "feature_names": [
+    "working_hours",
+    "idle_hours",
+    "attendance_days",
+    "segment_count",
+    "focus_fragmentation_index",
+    "task_progress",
+    "tasks_completed",
+    "active_hours",
+    "idle_hours_effective"
+  ],
+  "artifact": "model.joblib",
+  "metrics": {
+    "mae": 0.0,
+    "n_train": 6
+  },
+  "intended_use": "Optional productivity estimate; rules remain authoritative."
+}

@@ -1,0 +1,7 @@
+employee_id,working_hours,idle_hours,attendance_days,segment_count,focus_fragmentation_index,task_progress,tasks_completed,active_seconds,idle_seconds,label
+e1,8,1,5,20,0.1,80,12,28000,3600,72
+e2,9,2,4,15,0.2,60,8,25000,7000,58
+e3,7,0.5,5,25,0.05,90,15,30000,1800,85
+e4,10,3,3,8,0.4,40,4,20000,10000,42
+e5,8,1.5,5,18,0.15,75,10,27000,5000,68
+e6,6,1,4,12,0.2,70,9,22000,4000,63

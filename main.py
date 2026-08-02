@@ -42,6 +42,7 @@ app = FastAPI(
 )
 app.state.startup_complete = False
 app.state.started_at = int(time.time())
+app.state.startup_error = None
 app.state.rate_limiter = RateLimiter(
     window_seconds=settings.rate_limit_window_seconds,
     max_requests=settings.rate_limit_max_requests,
@@ -65,8 +66,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db()
-    app.state.startup_complete = True
+    try:
+        init_db()
+        app.state.startup_complete = True
+        app.state.startup_error = None
+    except Exception as exc:  # noqa: BLE001 — surface in /health/startup instead of killing the process
+        app.state.startup_complete = False
+        app.state.startup_error = f"{type(exc).__name__}: {exc}"
+        if settings.env != "production":
+            raise
 
 
 @app.middleware("http")
@@ -180,6 +188,7 @@ def health_startup():
         "status": "ok" if app.state.startup_complete else "starting",
         "startup_complete": bool(app.state.startup_complete),
         "started_at_epoch": app.state.started_at,
+        "startup_error": getattr(app.state, "startup_error", None),
     }
 
 

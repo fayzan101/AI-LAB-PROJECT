@@ -155,7 +155,7 @@ def get_idempotent_response(
             text(
                 """
                 SELECT request_hash, response_json, status_code
-                FROM idempotency_keys
+                FROM ai_idempotency_keys
                 WHERE tenant_id = :tenant_id AND endpoint = :endpoint AND idempotency_key = :idempotency_key
                 """
             ),
@@ -181,7 +181,7 @@ def save_idempotent_response(
         conn.execute(
             text(
                 """
-                INSERT INTO idempotency_keys (
+                INSERT INTO ai_idempotency_keys (
                     tenant_id, endpoint, idempotency_key, request_hash, response_json, status_code
                 )
                 VALUES (

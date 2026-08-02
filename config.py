@@ -13,6 +13,18 @@ def _to_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL", "sqlite:///employee_analytics.db")
+    # Neon/Vercel often set postgresql://; SQLAlchemy + psycopg3 needs this dialect.
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://") :]
+    return url
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("APP_NAME", "AI Employee Analytics System")
@@ -26,7 +38,7 @@ class Settings:
     service_client_id: str = os.getenv("SERVICE_CLIENT_ID", "portal-backend")
     service_client_secret: str = os.getenv("SERVICE_CLIENT_SECRET", "change-me")
     default_scope: str = os.getenv("DEFAULT_SCOPE", "analytics:write analytics:read")
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///employee_analytics.db")
+    database_url: str = _database_url()
 
     # Security hardening
     cors_origins: tuple[str, ...] = tuple(

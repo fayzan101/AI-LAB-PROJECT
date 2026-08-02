@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS employee_inputs (
-    id INTEGER PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
     employee_id VARCHAR(64) NOT NULL,
     tasks_completed INTEGER NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS employee_inputs (
 );
 
 CREATE TABLE IF NOT EXISTS task_inputs (
-    id INTEGER PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
     employee_id VARCHAR(64) NOT NULL,
     task_id VARCHAR(128) NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS task_inputs (
 );
 
 CREATE TABLE IF NOT EXISTS analytics_reports (
-    id INTEGER PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
     employee_id VARCHAR(64) NOT NULL,
     report_json TEXT NOT NULL,
@@ -41,8 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_task_inputs_tenant_employee_created
 CREATE INDEX IF NOT EXISTS idx_analytics_reports_tenant_employee_created
     ON analytics_reports (tenant_id, employee_id, created_at);
 
-CREATE TABLE IF NOT EXISTS idempotency_keys (
-    id INTEGER PRIMARY KEY,
+-- Prefixed to avoid colliding with the portal backend's idempotency_keys table.
+CREATE TABLE IF NOT EXISTS ai_idempotency_keys (
+    id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
     endpoint VARCHAR(128) NOT NULL,
     idempotency_key VARCHAR(128) NOT NULL,
